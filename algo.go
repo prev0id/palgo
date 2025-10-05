@@ -1,0 +1,137 @@
+package main
+
+import (
+	"fmt"
+	"sync"
+)
+
+const BLOCK = 1000
+
+func Fork2Join(funcs ...func()) {
+	wg := &sync.WaitGroup{}
+
+	for _, f := range funcs {
+		// f()
+		wg.Go(f)
+	}
+
+	wg.Wait()
+}
+
+func ParallelFor(l, r int, f func(int)) {
+	if abs(l-r) < BLOCK {
+		for i := l; i < r; i++ {
+			f(i)
+		}
+		return
+	}
+	m := (l + r) / 2
+	Fork2Join(
+		func() { ParallelFor(l, m, f) },
+		func() { ParallelFor(m, r, f) },
+	)
+}
+
+func Reduce(l, r int, a []int, f func(int, int) int) int {
+	if abs(l-r) < BLOCK {
+		ans := 0
+		for i := l; i < r; i++ {
+			ans += f(ans, a[i])
+		}
+		return ans
+	}
+	m := (l + r) / 2
+	var left, right int
+	Fork2Join(
+		func() { left = Reduce(l, m, a, f) },
+		func() { right = Reduce(m, r, a, f) },
+	)
+	return f(left, right)
+}
+
+func Scan(a []int, f func(int, int) int) []int {
+	n := len(a)
+	sum := make([]int, 2*n-1)
+	result := make([]int, n)
+
+	ScanUp(a, sum, 0, 0, n, f)
+	ScanDown(a, sum, result, 0, 0, n, 0, f)
+
+	return result
+}
+
+func ScanUp(
+	a, sum []int,
+	node, l, r int,
+	f func(int, int) int,
+) int {
+	if r-l == 1 {
+		sum[node] = a[l]
+		return sum[node]
+	}
+	m := (l + r) / 2
+	var left, right int
+	Fork2Join(
+		func() { left = ScanUp(a, sum, 2*node+1, l, m, f) },
+		func() { right = ScanUp(a, sum, 2*node+2, m, r, f) },
+	)
+	sum[node] = f(left, right)
+	return sum[node]
+}
+
+func ScanDown(
+	a, sum,
+	res []int,
+	node, l, r, fromLeft int,
+	f func(int, int) int,
+) {
+	if r-l == 1 {
+		res[l] = fromLeft + a[l]
+		return
+	}
+
+	m := (l + r) / 2
+
+	leftSum := sum[2*node+1]
+
+	Fork2Join(
+		func() { ScanDown(a, sum, res, 2*node+1, l, m, fromLeft, f) },
+		func() { ScanDown(a, sum, res, 2*node+2, m, r, fromLeft+leftSum, f) },
+	)
+}
+
+// func EPS(a []int, S int) int {
+// 	l := 0
+// 	r := len(a)
+// 	result := r
+
+// 	for l <= r {
+// 		m := (l + r) / 2
+
+// 		sum := Reduce(0, m, a)
+
+// 		if sum > S {
+// 			result = m
+// 			r = m
+// 		} else {
+// 			l = m + 1
+// 		}
+// 	}
+
+// 	return result
+// }
+
+func abs(value int) int {
+	if value < 0 {
+		return value
+	}
+	return value
+}
+
+func main() {
+	result := Scan(
+		[]int{6, 4, 16, 10, 16, 14, 2, 8},
+		func(i1, i2 int) int { return i1 + i2 },
+	)
+	fmt.Println(result)
+}
