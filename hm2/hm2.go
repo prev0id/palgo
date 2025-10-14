@@ -2,9 +2,35 @@ package main
 
 import (
 	"fmt"
+	"sync"
 )
 
 const BLOCK = 1000
+
+func Fork2Join(funcs ...func()) {
+	wg := &sync.WaitGroup{}
+
+	for _, f := range funcs {
+		// f()
+		wg.Go(f)
+	}
+
+	wg.Wait()
+}
+
+func ParallelFor(l, r int, f func(int)) {
+	if abs(l-r) < BLOCK {
+		for i := l; i < r; i++ {
+			f(i)
+		}
+		return
+	}
+	m := (l + r) / 2
+	Fork2Join(
+		func() { ParallelFor(l, m, f) },
+		func() { ParallelFor(m, r, f) },
+	)
+}
 
 func Reduce(l, r int, a []int, f func(int, int) int) int {
 	if abs(l-r) < BLOCK {

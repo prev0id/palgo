@@ -4,6 +4,8 @@ import (
 	"sync"
 )
 
+const BLOCK = 1000
+
 func Fork2Join(funcs ...func()) {
 	wg := &sync.WaitGroup{}
 
@@ -16,7 +18,7 @@ func Fork2Join(funcs ...func()) {
 }
 
 func ParallelFor(l, r int, f func(int)) {
-	if abs(l-r) < BLOCK {
+	if r-l < BLOCK {
 		for i := l; i < r; i++ {
 			f(i)
 		}
