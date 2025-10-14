@@ -30,7 +30,7 @@
 
 #let line-block = rect.with(fill: luma(240), stroke: (left: 0.25em))
 
-= Задание 1
+= Задание 1<task1>
 #line-block[
   Доказать, что $ sum_(i=0)^(log n) log(n / 2^i) = Theta(log^2 n) $
 ]
@@ -108,24 +108,39 @@ func ScanDown(
   Предподсчётом пользоваться нельзя.
 ]
 
+Идея алгоритма:
++ делаем `Reduce` на блоках $(2^k-1, 2^(k+1))$, где $k in [0, floor(log j)]$
+$ "work" = 2^(k+1) = O(j) $
+$ "span" = sum_0^(ceil(log j)) log (j / 2^i) = O(log^2 j) $
++ дальше на отрезке $(2^k-1, 2^(k+1))$, где $k = floor(log j)$ делаем `Scan` + бинпоиск $j$ по префексным суммам
+$ "work" = O(j) $
+$ "span" = O(log(j)) $
+
+
 ```go
 func EPS(a []int, S int) int {
-	l := 0
-	r := len(a)
-	result := r
+	prev_k := 0
+	next_k := 1
+	sum := 0
 
-	for l <= r {
-		m := (l + r) / 2
-		sum := Reduce(0, m, a)
-
-		if sum > S {
-			result = m
-			r = m
-		} else {
-			l = m + 1
+	for {
+		partial_sum := Reduce(prev_k, next_k, a)
+		if partial_sum+sum >= S {
+			break
 		}
+		sum += partial_sum
+		prev_k = next_k + 1
+		next_k = min(next_k * 2, len(a))
 	}
-	return result
+
+	prefSums := Scan(a[prev_k:next_k])
+
+	prefSumIndex := BinarySearch(
+		prefSums, S,
+		func(idx int) bool { return prefSums[idx]+sum >= S },
+	)
+
+	return prefSumIndex + prev_k
 }
 ```
 

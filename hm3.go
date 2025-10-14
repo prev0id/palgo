@@ -35,31 +35,36 @@ type Node struct {
 }
 
 func Build23Tree(data []int) *Node {
-	leaves := make([]*Node, len(data))
-	ParallelFor(
-		0, len(data),
-		func(i int) { leaves[i] = &Node{Key: data[i]} },
-	)
-
-	level := buildLevel(leaves)
-
-	return level[0]
+	return buildNode(data, 0, len(data))
 }
 
-func buildLevel(nodes []*Node) []*Node {
-	if len(nodes) == 1 { // корень
-		return nodes
+func buildNode(data []int, l, r int) *Node {
+	n := r - l
+	if n == 1 {
+		return &Node{Key: data[l]}
 	}
 
-	n := len(nodes)
-	levelSize := (n + 2) / 3
-	level := make([]*Node, levelSize)
+	var children []*Node
 
-	ParallelFor(0, levelSize, func(i int) {
-		start := i * 3
-		end := min(start+3, n)
-		level[i] = &Node{Children: nodes[start:end]}
-	})
+	if n%3 == 1 || n == 2 {
+		var left, right *Node
+		m := (l + r) / 2
+		Fork2Join(
+			func() { left = buildNode(data, l, m) },
+			func() { right = buildNode(data, l, m) },
+		)
+		children = []*Node{left, right}
+	} else {
+		var left, middle, right *Node
+		m1 := l + n/3
+		m2 := l + 2*n/3
+		Fork2Join(
+			func() { left = buildNode(data, l, m1) },
+			func() { middle = buildNode(data, m1, m2) },
+			func() { right = buildNode(data, m2, r) },
+		)
+		children = []*Node{left, middle, right}
+	}
 
-	return buildLevel(level)
+	return &Node{Children: children}
 }

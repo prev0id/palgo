@@ -75,24 +75,28 @@ func ScanDown(
 }
 
 // func EPS(a []int, S int) int {
-// 	l := 0
-// 	r := len(a)
-// 	result := r
+// 	prev_k := 0
+// 	next_k := 1
+// 	sum := 0
 
-// 	for l <= r {
-// 		m := (l + r) / 2
-
-// 		sum := Reduce(0, m, a)
-
-// 		if sum > S {
-// 			result = m
-// 			r = m
-// 		} else {
-// 			l = m + 1
+// 	for {
+// 		partial_sum := Reduce(prev_k, next_k, a)
+// 		if partial_sum+sum >= S {
+// 			break
 // 		}
+// 		sum += partial_sum
+// 		prev_k = next_k + 1
+// 		next_k = next_k * 2
 // 	}
 
-// 	return result
+// 	prefSums := Scan(a[prev_k:next_k])
+
+// 	prefSumIndex := BinarySearch(
+// 		prefSums, S,
+// 		func(idx int) bool { return prefSums[idx]+sum >= S },
+// 	)
+
+// 	return prefSumIndex + prev_k
 // }
 
 func abs(value int) int {
