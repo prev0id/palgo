@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"os"
+	"runtime"
 	"slices"
 	"strconv"
 	"time"
@@ -12,6 +13,9 @@ import (
 const SliceSize = 100_000_000
 
 func main() {
+	// Сетим максимум 4 CPU
+	runtime.GOMAXPROCS(4)
+
 	if len(os.Args) == 1 {
 		runWithoutArgs() // обычный запуск на массиве из 10^8 случайных элементов
 	} else {
