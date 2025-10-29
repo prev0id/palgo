@@ -36,7 +36,6 @@ func Depth(n int, r int, traverse []Edge) []int {
 
 	return result
 }
-```
 
 func GetParents(n int, r int, traverse []Edge) []int
 
