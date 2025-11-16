@@ -17,7 +17,7 @@
 
 const int array_size = 100'000'000;
 // const int array_size = 10'000'000;
-const int BLOCK = 10000;
+const int BLOCK = array_size / 4;
 
 void seq_quicksort(std::vector<int>& data, int left, int right) {
     if (left >= right) return;
@@ -88,22 +88,23 @@ void par_quicksort(parlay::slice<int*, int*> data, parlay::slice<int*, int*> out
 template <typename Range, typename Less>
 void qsort(Range in, Range out, Less less) {
     long n = in.size();
-    if (n < 10000) {
+    if (n < BLOCK) {
         parlay::copy(in, out);
         std::sort(out.begin(), out.end(), less);
-    } else {
-        auto pivot = parlay::sort(parlay::tabulate(101, [&] (long i) {
-        return in[i*n/101];}))[50];
-        auto [x, offsets] = parlay::counting_sort(in, 3, [&] (auto k) {
-        return less(k, pivot) ? 0u : less(pivot, k) ? 2u : 1u;});
-        auto& split = x;
-        long nl = offsets[1];
-        long nm = offsets[2];
-        parlay::copy(split.cut(nl,nm), out.cut(nl,nm));
-        parlay::par_do(
-            [&] { qsort(split.cut(0,nl), out.cut(0,nl), less);},
-            [&] { qsort(split.cut(nm,n), in.cut(nm,n), less);});
+        return;
     }
+
+    auto pivot = parlay::sort(parlay::tabulate(101, [&] (long i) {
+    return in[i*n/101];}))[50];
+    auto [x, offsets] = parlay::counting_sort(in, 3, [&] (auto k) {
+    return less(k, pivot) ? 0u : less(pivot, k) ? 2u : 1u;});
+    auto& split = x;
+    long nl = offsets[1];
+    long nm = offsets[2];
+    parlay::copy(split.cut(nl,nm), out.cut(nl,nm));
+    parlay::par_do(
+        [&] { qsort(split.cut(0,nl), out.cut(0,nl), less);},
+        [&] { qsort(split.cut(nm,n), in.cut(nm,n), less);});
 }
 
 template <typename Range, typename Less = std::less<>>
@@ -123,6 +124,7 @@ double mesure_par_quicksort(const std::vector<int>& data) {
     std::cout << "\n------ par_quicksort ------" << std::endl;
 
     auto start = std::chrono::high_resolution_clock::now();
+    // par_quicksort(data_copy.cut(0, n), result.cut(0, n));
     quicksort(data_copy);
     auto end = std::chrono::high_resolution_clock::now();
 

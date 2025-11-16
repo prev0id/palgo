@@ -7,6 +7,10 @@ PARLAY_NUM_THREADS?=4
 .PHONY: build
 build: clear-parlaylib prepare-parlaylib build-parlaylib build-app
 
+.PHONY: download-parlay
+download-parlay:
+	cd deps && git clone git@github.com:cmuparlay/parlaylib.git
+
 .PHONY: clear-parlaylib
 clear-parlaylib:
 	rm -rf $(BUILD) || true
