@@ -1,37 +1,14 @@
-PARLAY?=$(PWD)/deps/parlaylib
-BUILD?=$(PARLAY)/build
-INCLUDE?=$(PWD)/include
-BIN?=$(PWD)/bin
-PARLAY_NUM_THREADS?=4
+BUILD ?= build
+PARLAY_NUM_THREADS ?= 4
 
 .PHONY: build
-build: clear-parlaylib prepare-parlaylib build-parlaylib build-app
-
-.PHONY: download-parlay
-download-parlay:
-	cd deps && git clone git@github.com:cmuparlay/parlaylib.git
-
-.PHONY: clear-parlaylib
-clear-parlaylib:
-	rm -rf $(BUILD) || true
-	rm -rf $(INCLUDE) || true
-
-.PHONY: prepare-parlaylib
-prepare-parlaylib:
-	mkdir $(BUILD)
-	mkdir $(INCLUDE)
-
-.PHONY: build-parlaylib
-build-parlaylib:
-
-	cd $(BUILD) \
-	&& cmake $(PARLAY) -DCMAKE_INSTALL_PREFIX:PATH=$(INCLUDE) \
-	&& cmake --build . --target install
-
-.PHONY: build-app
-build-app:
-	g++ -std=c++17 main.cpp -o $(BIN)/main
+build:
+	mkdir -p $(BUILD)
+	cmake -B $(BUILD) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+	# cmake -B $(BUILD) -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O3 -march=native -pipe"
+	cmake --build $(BUILD)
+	ln -sf $(BUILD)/compile_commands.json compile_commands.json
 
 .PHONY: run
-run:
-	PARLAY_NUM_THREADS=$(PARLAY_NUM_THREADS) $(BIN)/main
+run: build
+	PARLAY_NUM_THREADS=$(PARLAY_NUM_THREADS) ./$(BUILD)/main

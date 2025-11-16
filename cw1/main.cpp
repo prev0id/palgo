@@ -6,34 +6,28 @@
 #include <iostream>
 #include <chrono>
 
-#include "include/include/parlay/parallel.h"
-#include "include/include/parlay/primitives.h"
-#include "include/include/parlay/sequence.h"
-#include "include/include/parlay/slice.h"
-
-/*
- * Господи, надеюсь это последний раз когда мне приходится использовать этот прекрасный язык и не менее прекрасный cmake
- */
+#include <parlay/parallel.h>
+#include <parlay/primitives.h>
+#include <parlay/sequence.h>
+#include <parlay/slice.h>
 
 const int array_size = 100'000'000;
 // const int array_size = 10'000'000;
-const int BLOCK = array_size / 4;
+// const int BLOCK = array_size / 4;
+const int BLOCK = 1 << 16;
+
+// const size_t PAR_THRESHOLD = 1 << 16;
 
 void seq_quicksort(std::vector<int>& data, int left, int right) {
     if (left >= right) return;
-
-    int pivot = data[(left + right) / 2];
-    int i = left, j = right;
-    while (i <= j) {
-        while (data[i] < pivot) ++i;
-        while (data[j] > pivot) --j;
-        if (i <= j) {
-            std::swap(data[i], data[j]);
-            ++i; --j;
-        }
+    int m2 = left, m1 = right, pivot = data[(left+right)/2];
+    while (m2 <= m1) {
+        while (data[m2] < pivot) ++m2;
+        while (data[m1] > pivot) --m1;
+        if (m2 <= m1) std::swap(data[m2++], data[m1--]);
     }
-    if (left < j) seq_quicksort(data, left, j);
-    if (i < right) seq_quicksort(data, i, right);
+    seq_quicksort(data, left, m1);
+    seq_quicksort(data, m2, right);
 }
 
 double mesure_seq_quicksort(const std::vector<int>& data) {
@@ -74,46 +68,11 @@ void par_quicksort(parlay::slice<int*, int*> data, parlay::slice<int*, int*> out
     size_t m1 = left.size();
     size_t m2 = left.size() + middle.size();
 
-    // parlay::filter возвращает какую-то хрень, копируем из нее в data обратно
-    // parlay::copy(left, data.cut(0, m1));
-    // parlay::copy(right, data.cut(m2, n));
-
     parlay::par_do(
         [&] { par_quicksort(parlay::make_slice(left), out.cut(0, m1));},
         [&] { par_quicksort(parlay::make_slice(right), out.cut(m2, n));});
 
     parlay::copy(middle, out.cut(m1, m2));
-}
-
-template <typename Range, typename Less>
-void qsort(Range in, Range out, Less less) {
-    long n = in.size();
-    if (n < BLOCK) {
-        parlay::copy(in, out);
-        std::sort(out.begin(), out.end(), less);
-        return;
-    }
-
-    auto pivot = parlay::sort(parlay::tabulate(101, [&] (long i) {
-    return in[i*n/101];}))[50];
-    auto [x, offsets] = parlay::counting_sort(in, 3, [&] (auto k) {
-    return less(k, pivot) ? 0u : less(pivot, k) ? 2u : 1u;});
-    auto& split = x;
-    long nl = offsets[1];
-    long nm = offsets[2];
-    parlay::copy(split.cut(nl,nm), out.cut(nl,nm));
-    parlay::par_do(
-        [&] { qsort(split.cut(0,nl), out.cut(0,nl), less);},
-        [&] { qsort(split.cut(nm,n), in.cut(nm,n), less);});
-}
-
-template <typename Range, typename Less = std::less<>>
-auto quicksort(Range& in, Less less = {}) {
-  long n = in.size();
-  using T = typename Range::value_type;
-  parlay::sequence<T> out(n);
-  qsort(in.cut(0,n), out.cut(0,n), less);
-  return out;
 }
 
 double mesure_par_quicksort(const std::vector<int>& data) {
@@ -124,8 +83,7 @@ double mesure_par_quicksort(const std::vector<int>& data) {
     std::cout << "\n------ par_quicksort ------" << std::endl;
 
     auto start = std::chrono::high_resolution_clock::now();
-    // par_quicksort(data_copy.cut(0, n), result.cut(0, n));
-    quicksort(data_copy);
+    par_quicksort(data_copy.cut(0, n), result.cut(0, n));
     auto end = std::chrono::high_resolution_clock::now();
 
     std::cout << "VALIDATION: ";
