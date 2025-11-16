@@ -12,8 +12,8 @@
 #include <parlay/sequence.h>
 #include <parlay/slice.h>
 
-// const size_t N = 100'000'000;
-const size_t N = 10'000'000;
+const size_t N = 100'000'000;
+// const size_t N = 10'000'000;
 const size_t PAR_THRESHOLD = N / 4;
 const size_t TESTS = 5;
 
@@ -43,72 +43,26 @@ double measure_seq(const std::vector<int>& data, const std::vector<int>& target)
 }
 
 void par_quicksort(parlay::slice<int*, int*> src, parlay::slice<int*, int*> dst) {
-    size_t n = src.size();
-    if (n <= PAR_THRESHOLD) {
-      parlay::copy(src, dst);
-      std::sort(dst.begin(), dst.end());
-      return;
+    long n = src.size();
+    if (n < PAR_THRESHOLD) {
+        parlay::copy(src, dst);
+        std::sort(dst.begin(), dst.end());
+        return;
     }
-
     int pivot = src[n / 2];
 
-    // allocate flag arrays
-    parlay::sequence<int> is_left(n);
-    parlay::sequence<int> is_equal(n);
+    auto left = parlay::filter(src, [&](int x) {return x < pivot;});
+    auto middle = parlay::filter(src, [&](int x) {return x == pivot;});
+    auto right = parlay::filter(src, [&](int x) {return x > pivot;});
 
-    // fill flags in parallel
-    parlay::parallel_for(0, n, [&](size_t i) {
-      int x = src[i];
-      is_left[i]  = (x <  pivot) ? 1 : 0;
-      is_equal[i] = (x == pivot) ? 1 : 0;
-    });
+    size_t m1 = left.size();
+    size_t m2 = left.size() + middle.size();
 
-    // scan returns pair<sequence, total>
-    auto left_scan  = parlay::scan(is_left);
-    auto equal_scan = parlay::scan(is_equal);
-
-    parlay::sequence<int> pref_left  = std::move(left_scan.first);
-    parlay::sequence<int> pref_equal = std::move(equal_scan.first);
-
-    size_t cnt_left  = (size_t) left_scan.second;
-    size_t cnt_equal = (size_t) equal_scan.second;
-    // cnt_right = n - cnt_left - cnt_equal;
-
-    // write elements into dst according to positions computed from prefix sums
-    parlay::parallel_for(0, n, [&](size_t i) {
-      int x = src[i];
-      if (x < pivot) {
-        size_t pos = (size_t)pref_left[i];
-        dst[pos] = x;
-      } else if (x == pivot) {
-        size_t pos = cnt_left + (size_t)pref_equal[i];
-        dst[pos] = x;
-      } else {
-        size_t pos = cnt_left + cnt_equal +
-                     (i - (size_t)pref_left[i] - (size_t)pref_equal[i]);
-        dst[pos] = x;
-      }
-    });
-
-    // recursively sort left and right parts in parallel
     parlay::par_do(
-      [&] {
-        if (cnt_left > 0)
-          par_quicksort(dst.cut(0, cnt_left), src.cut(0, cnt_left));
-      },
-      [&] {
-        size_t right_off = cnt_left + cnt_equal;
-        if (right_off < n)
-          par_quicksort(dst.cut(right_off, n), src.cut(right_off, n));
-      }
-    );
+        [&] { par_quicksort(parlay::make_slice(left), dst.cut(0, m1));},
+        [&] { par_quicksort(parlay::make_slice(right), dst.cut(m2, n));});
 
-    // copy sorted parts back into dst (middle already in place)
-    if (cnt_left > 0)
-      parlay::copy(src.cut(0, cnt_left), dst.cut(0, cnt_left));
-    size_t right_off = cnt_left + cnt_equal;
-    if (right_off < n)
-      parlay::copy(src.cut(right_off, n), dst.cut(right_off, n));
+    parlay::copy(middle, dst.cut(m1, m2));
 }
 
 double measure_par(const std::vector<int>& data, const std::vector<int>& target) {
