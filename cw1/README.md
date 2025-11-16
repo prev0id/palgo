@@ -14,6 +14,9 @@ make run
 количество потоков настраивается в Makefile, количество запускаемых тестов в main.cpp
 
 ## Результаты
+CPU: Apple M4 Pro
+OS: MacOS 15.6.1
+
 ```
 ➜  cw1 git:(master) ✗ make run
 PARLAY_NUM_THREADS=4 ./build/main
