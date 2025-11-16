@@ -13,8 +13,7 @@
 #include <parlay/slice.h>
 
 const size_t N = 100'000'000;
-// const size_t N = 10'000'000;
-const size_t PAR_THRESHOLD = N / 4;
+const size_t BLOCK = 16'400'000;
 const size_t TESTS = 5;
 
 void seq_quicksort(std::vector<int>& data, int left, int right) {
@@ -44,7 +43,7 @@ double measure_seq(const std::vector<int>& data, const std::vector<int>& target)
 
 void par_quicksort(parlay::slice<int*, int*> src, parlay::slice<int*, int*> dst) {
     long n = src.size();
-    if (n < PAR_THRESHOLD) {
+    if (n < BLOCK) {
         parlay::copy(src, dst);
         std::sort(dst.begin(), dst.end());
         return;
@@ -115,7 +114,7 @@ int main() {
     double average_par = sum_par / TESTS;
 
     std::cout << "\n--------------------------\n";
-    std::cout << "AVERAGE SEQ: " << average_par << " ms\n";
+    std::cout << "AVERAGE SEQ: " << average_seq << " ms\n";
     std::cout << "AVERAGE PAR: " << average_par << " ms\n";
     std::cout << "AVERAGE SPEEDUP: " << average_seq / average_par << "\n";
     std::cout << "--------------------------\n";
