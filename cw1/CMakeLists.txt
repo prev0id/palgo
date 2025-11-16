@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 4.1)
+
 include(FetchContent)
 
 FetchContent_Declare(

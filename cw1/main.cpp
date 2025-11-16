@@ -13,8 +13,8 @@
 
 const int array_size = 100'000'000;
 // const int array_size = 10'000'000;
-// const int BLOCK = array_size / 4;
-const int BLOCK = 1 << 16;
+const int BLOCK = array_size / 4;
+// const int BLOCK = 1 << 16;
 
 // const size_t PAR_THRESHOLD = 1 << 16;
 
@@ -30,7 +30,7 @@ void seq_quicksort(std::vector<int>& data, int left, int right) {
     seq_quicksort(data, m2, right);
 }
 
-double mesure_seq_quicksort(const std::vector<int>& data) {
+double measure_seq_quicksort(const std::vector<int>& data) {
     auto result = std::vector(data);
 
     std::cout << "\n------ seq_quicksort ------" << std::endl;
@@ -75,7 +75,7 @@ void par_quicksort(parlay::slice<int*, int*> data, parlay::slice<int*, int*> out
     parlay::copy(middle, out.cut(m1, m2));
 }
 
-double mesure_par_quicksort(const std::vector<int>& data) {
+double measure_par_quicksort(const std::vector<int>& data) {
     size_t n = data.size();
     auto data_copy = parlay::to_sequence(data);
     auto result = parlay::sequence<int>(n);
@@ -110,8 +110,8 @@ int main() {
     std::cout << "Array created" << std::endl;
 
 
-    auto seq = mesure_seq_quicksort(data);
-    auto par = mesure_par_quicksort(data);
+    auto seq = measure_seq_quicksort(data);
+    auto par = measure_par_quicksort(data);
 
     std::cout << "DIFFERENCE " << seq / par << " times" << std::endl;
 
