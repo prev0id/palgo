@@ -15,6 +15,7 @@ make run
 
 ## Результаты
 CPU: Apple M4 Pro
+
 OS: MacOS 15.6.1
 
 ```
@@ -22,33 +23,33 @@ OS: MacOS 15.6.1
 PARLAY_NUM_THREADS=4 ./build/main
 
 --- TEST 1 ---
-SEQ: 6083.99 ms
-PAR: 1946.96 ms
-Speedup: 3.12487
+SEQ: 6111.07 ms
+PAR: 1863.69 ms
+Speedup: 3.27901
 
 --- TEST 2 ---
-SEQ: 6060.81 ms
-PAR: 2081.93 ms
-Speedup: 2.91115
+SEQ: 6264.51 ms
+PAR: 1878.1 ms
+Speedup: 3.33555
 
 --- TEST 3 ---
-SEQ: 6020.87 ms
-PAR: 1860.52 ms
-Speedup: 3.23612
+SEQ: 6196.45 ms
+PAR: 1743.48 ms
+Speedup: 3.55408
 
 --- TEST 4 ---
-SEQ: 6065.35 ms
-PAR: 1784.04 ms
-Speedup: 3.39979
+SEQ: 6173.03 ms
+PAR: 1662.06 ms
+Speedup: 3.71408
 
 --- TEST 5 ---
-SEQ: 6083.36 ms
-PAR: 2044.17 ms
-Speedup: 2.97596
+SEQ: 6395.6 ms
+PAR: 1868.13 ms
+Speedup: 3.42353
 
 --------------------------
-AVERAGE SEQ: 6062.88 ms
-AVERAGE PAR: 1943.52 ms
-AVERAGE SPEEDUP: 3.11953
+AVERAGE SEQ: 6228.13 ms
+AVERAGE PAR: 1803.09 ms
+AVERAGE SPEEDUP: 3.45414
 --------------------------
 ```
