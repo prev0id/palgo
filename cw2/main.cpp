@@ -13,7 +13,7 @@
 #include <parlay/sequence.h>
 #include <parlay/slice.h>
 
-using Vertex = uint32_t;
+using Vertex = int;
 using Graph = std::vector<std::vector<Vertex>>;
 static constexpr Vertex EMPTY = -1;
 
@@ -29,46 +29,46 @@ Graph make_cube_graph(size_t side) {
     Graph graph(n);
     for (size_t x = 0; x < side; ++x) {
         for (size_t y = 0; y < side; ++y) {
-        for (size_t z = 0; z < side; ++z) {
-            Vertex v = id3(x, y, z, side);
-            if (x > 0)        graph[v].push_back(id3(x - 1, y, z, side));
-            if (x + 1 < side) graph[v].push_back(id3(x + 1, y, z, side));
-            if (y > 0)        graph[v].push_back(id3(x, y - 1, z, side));
-            if (y + 1 < side) graph[v].push_back(id3(x, y + 1, z, side));
-            if (z > 0)        graph[v].push_back(id3(x, y, z - 1, side));
-            if (z + 1 < side) graph[v].push_back(id3(x, y, z + 1, side));
-        }
+            for (size_t z = 0; z < side; ++z) {
+                Vertex v = id3(x, y, z, side);
+                if (x > 0)        graph[v].push_back(id3(x - 1, y, z, side));
+                if (x + 1 < side) graph[v].push_back(id3(x + 1, y, z, side));
+                if (y > 0)        graph[v].push_back(id3(x, y - 1, z, side));
+                if (y + 1 < side) graph[v].push_back(id3(x, y + 1, z, side));
+                if (z > 0)        graph[v].push_back(id3(x, y, z - 1, side));
+                if (z + 1 < side) graph[v].push_back(id3(x, y, z + 1, side));
+            }
         }
     }
     return graph;
 }
 
-std::vector<int32_t> seq_bfs(const Graph& graph, Vertex s) {
+std::vector<int> seq_bfs(const Graph& graph, Vertex s) {
     size_t n = graph.size();
-    std::vector<int32_t> dist(n, -1);
-
-    std::vector<Vertex> q(n);
-    size_t head = 0, tail = 0;
+    std::vector<int> dist(n, -1);
+    std::vector<bool> visited(n, false);
+    std::queue<Vertex> q;
 
     dist[s] = 0;
-    q[tail++] = s;
+    q.push(s);
+    visited[s] = true;
 
-    while (head < tail) {
-        Vertex v = q[head++];
-        int32_t nd = dist[v] + 1;
-        const auto &neighbors = graph[v];
-        for (size_t i = 0; i < neighbors.size(); ++i) {
-        Vertex u = neighbors[i];
-        if (dist[u] == -1) {
-            dist[u] = nd;
-            q[tail++] = u;
-        }
+    while (!q.empty()) {
+        Vertex u = q.front();
+        q.pop();
+        for (Vertex v : graph[u]) {
+            if (visited[v]) {
+                continue;
+            }
+            dist[v] = dist[u] + 1;
+            visited[v] = true;
+            q.push(v);
         }
     }
     return dist;
 }
 
-std::vector<int32_t> par_bfs(const Graph& graph, Vertex s) {
+std::vector<int> par_bfs(const Graph& graph, Vertex s) {
     size_t n = graph.size();
 
     std::vector<std::atomic<uint8_t>> visited(n);
@@ -76,7 +76,7 @@ std::vector<int32_t> par_bfs(const Graph& graph, Vertex s) {
         visited[i].store(0, std::memory_order_relaxed);
     });
 
-    std::vector<int32_t> dist(n);
+    std::vector<int> dist(n);
     parlay::parallel_for(0, n, [&](size_t i) { dist[i] = -1; });
 
     visited[s].store(1, std::memory_order_relaxed);
@@ -85,41 +85,43 @@ std::vector<int32_t> par_bfs(const Graph& graph, Vertex s) {
     parlay::sequence<Vertex> frontier(1);
     frontier[0] = s;
 
-    int32_t level = 0;
+    int level = 0;
 
     while (frontier.size() != 0) {
         size_t m = frontier.size();
 
         parlay::sequence<size_t> deg(m);
         parlay::parallel_for(0, m, [&](size_t i) {
-        deg[i] = graph[frontier[i]].size();
+            deg[i] = graph[frontier[i]].size();
         });
 
         auto scanned = parlay::scan(deg);
-        parlay::sequence<size_t> offset = std::move(scanned.first);
+        parlay::sequence<size_t> offsets = std::move(scanned.first);
         size_t next_frontier_size = scanned.second;
 
         parlay::sequence<Vertex> next_frontier(next_frontier_size);
-        parlay::parallel_for(0, next_frontier_size, [&](size_t i) {
-        next_frontier[i] = EMPTY;
+        parlay::parallel_for(0, next_frontier_size, [&](size_t idx) {
+            next_frontier[idx] = EMPTY;
         });
 
         parlay::parallel_for(0, m, [&](size_t idx) {
-        Vertex v = frontier[idx];
-        size_t offset_index = offset[idx];
-        const auto &neighbors = graph[v];
-        parlay::parallel_for(0, neighbors.size(), [&](size_t j) {
-            Vertex u = neighbors[j];
-            uint8_t expected = 0;
+            Vertex v = frontier[idx];
+            size_t offset = offsets[idx];
+            const auto &neighbors = graph[v];
+            // parlay::parallel_for(0, neighbors.size(), [&](size_t neighbor_idx) {
+            for (size_t neighbor_idx = 0; neighbor_idx < neighbors.size(); neighbor_idx++) {
+                Vertex neighbor = neighbors[neighbor_idx];
+                uint8_t expected = 0;
 
-            bool ok = visited[u].compare_exchange_strong(expected, 1, std::memory_order_relaxed);
-            if (ok) {
-                dist[u] = level + 1;
-                next_frontier[offset_index + j] = u;
-            } else {
-                next_frontier[offset_index + j] = EMPTY;
+                bool ok = visited[neighbor].compare_exchange_strong(expected, 1, std::memory_order_relaxed);
+                if (ok) {
+                    dist[neighbor] = level + 1;
+                    next_frontier[offset + neighbor_idx] = neighbor;
+                } else {
+                    next_frontier[offset + neighbor_idx] = EMPTY;
+                }
+            // });
             }
-        });
         });
 
         frontier = parlay::filter(next_frontier, [&](Vertex x) { return x != EMPTY; });
@@ -130,7 +132,7 @@ std::vector<int32_t> par_bfs(const Graph& graph, Vertex s) {
 }
 
 
-bool equal_dist(const std::vector<int32_t>& a, const std::vector<int32_t>& b) {
+bool equal_dist(const std::vector<int>& a, const std::vector<int>& b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); i++) if (a[i] != b[i]) return false;
     return true;
@@ -157,7 +159,7 @@ void test_path_graph() {
     const size_t n = 5000;
     const size_t m = 20000;
     std::mt19937 rng(12345);
-    std::uniform_int_distribution<uint32_t> uid(0, (uint32_t)n - 1);
+    std::uniform_int_distribution<int> uid(0, (int)n - 1);
 
     Graph graph(n);
     for (size_t i = 0; i < m; i++) {
@@ -194,15 +196,15 @@ void test_small_cube() {
         for (size_t y = 0; y < s; y += 7) {
             for (size_t z = 0; z < s; z += 7) {
                 Vertex v = id3(x, y, z, s);
-                int32_t want = static_cast<int32_t>(x + y + z);
+                int want = static_cast<int>(x + y + z);
                 if (d1[v] != want) {
-                std::cout << "TEST CUBE FORMULA: ERROR\n";
-                std::exit(1);
+                    std::cout << "TEST CUBE FORMULA: ERROR\n";
+                    std::exit(1);
                 }
             }
         }
     }
-    }
+}
 
 static void run_tests() {
     test_path_graph();
@@ -217,7 +219,7 @@ double measure_seq_cube(const Graph& graph, size_t side) {
     auto dist = seq_bfs(graph, 0);
     auto t1 = std::chrono::high_resolution_clock::now();
 
-    if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int32_t>(3 * (side - 1))) {
+    if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int>(3 * (side - 1))) {
         std::cout << "SEQ VALIDATION ERROR\n";
     }
 
@@ -229,7 +231,7 @@ double measure_par_cube(const Graph& graph, size_t side) {
     auto dist = par_bfs(graph, 0);
     auto t1 = std::chrono::high_resolution_clock::now();
 
-    if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int32_t>(3 * (side - 1))) {
+    if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int>(3 * (side - 1))) {
         std::cout << "PAR VALIDATION ERROR\n";
     }
 
