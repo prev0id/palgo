@@ -6,7 +6,6 @@
 #include <chrono>
 #include <random>
 #include <atomic>
-#include <cstdint>
 
 #include <parlay/parallel.h>
 #include <parlay/primitives.h>
@@ -71,13 +70,12 @@ std::vector<int> seq_bfs(const Graph& graph, Vertex s) {
 std::vector<int> par_bfs(const Graph& graph, Vertex s) {
     size_t n = graph.size();
 
-    std::vector<std::atomic<uint8_t>> visited(n);
+    std::vector<std::atomic<bool>> visited(n);
     parlay::parallel_for(0, n, [&](size_t i) {
         visited[i].store(0, std::memory_order_relaxed);
     });
 
     std::vector<int> dist(n);
-    parlay::parallel_for(0, n, [&](size_t i) { dist[i] = -1; });
 
     visited[s].store(1, std::memory_order_relaxed);
     dist[s] = 0;
@@ -85,7 +83,7 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
     parlay::sequence<Vertex> frontier(1);
     frontier[0] = s;
 
-    int level = 0;
+    int level = 1;
 
     while (frontier.size() != 0) {
         size_t m = frontier.size();
@@ -111,11 +109,11 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
             // parlay::parallel_for(0, neighbors.size(), [&](size_t neighbor_idx) {
             for (size_t neighbor_idx = 0; neighbor_idx < neighbors.size(); neighbor_idx++) {
                 Vertex neighbor = neighbors[neighbor_idx];
-                uint8_t expected = 0;
+                bool expected = false;
 
-                bool ok = visited[neighbor].compare_exchange_strong(expected, 1, std::memory_order_relaxed);
+                bool ok = visited[neighbor].compare_exchange_strong(expected, true, std::memory_order_relaxed);
                 if (ok) {
-                    dist[neighbor] = level + 1;
+                    dist[neighbor] = level;
                     next_frontier[offset + neighbor_idx] = neighbor;
                 } else {
                     next_frontier[offset + neighbor_idx] = EMPTY;
