@@ -1,169 +1,285 @@
-#include <iostream>
+#include <cstddef>
 #include <vector>
-#include <queue>
+#include <cstdlib>
+#include <ctime>
+#include <iostream>
 #include <chrono>
+#include <random>
+#include <atomic>
+#include <limits>
 #include <cstdint>
 
 #include <parlay/parallel.h>
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
-#include <parlay/delayed.h>
+#include <parlay/slice.h>
 
-using Vertex = uint32_t;
-using Graph = parlay::sequence<parlay::sequence<Vertex>>;
+using vertex = uint32_t;
+static constexpr vertex EMPTY = std::numeric_limits<vertex>::max();
 
-parlay::sequence<Vertex> seq_bfs(const Graph& G, Vertex src) {
-    size_t n = G.size();
-    parlay::sequence<Vertex> dist(n, Vertex(-1));
-    std::queue<Vertex> q;
+const size_t SIDE  = 300;
+const size_t TESTS = 5;
 
-    dist[src] = 0;
-    q.push(src);
-
-    while (!q.empty()) {
-        Vertex u = q.front(); q.pop();
-        for (Vertex v : G[u]) {
-            if (dist[v] == Vertex(-1)) {
-                dist[v] = dist[u] + 1;
-                q.push(v);
-            }
-        }
-    }
-    return dist;
+inline vertex id3(size_t x, size_t y, size_t z, size_t side) {
+  return static_cast<vertex>((x * side + y) * side + z);
 }
 
-// Параллельный BFS (top-down подход с параллельной обработкой фронта)
-parlay::sequence<Vertex> par_bfs(const Graph& G, Vertex src) {
-    size_t n = G.size();
-    parlay::sequence<Vertex> dist(n, Vertex(-1));
-    parlay::sequence<Vertex> frontier = parlay::sequence<Vertex>{src};
-    dist[src] = 0;
-
-    while (frontier.size() > 0) {
-        auto next_frontier = parlay::delayed::map(frontier, [&](Vertex u) {
-            return parlay::delayed::map(G[u], [&](Vertex v) {
-                return (dist[v] == Vertex(-1)) ? v : Vertex(-1);
-            });
-        });
-
-        auto candidates = parlay::flatten(next_frontier);
-        auto valid = parlay::filter(candidates, [](Vertex v) { return v != Vertex(-1); });
-
-        auto unique_next = parlay::remove_duplicates(parlay::unique(valid));
-
-        size_t next_level = dist[frontier[0]] + 1;
-
-        parlay::parallel_for(0, unique_next.size(), [&](size_t i) {
-            Vertex v = unique_next[i];
-            if (dist[v] == Vertex(-1)) {
-                dist[v] = next_level;
-            }
-        });
-
-        frontier = std::move(unique_next);
+static std::vector<std::vector<vertex>> make_cube_adj(size_t side) {
+  size_t n = side * side * side;
+  std::vector<std::vector<vertex>> adj(n);
+  for (size_t x = 0; x < side; ++x) {
+    for (size_t y = 0; y < side; ++y) {
+      for (size_t z = 0; z < side; ++z) {
+        vertex v = id3(x, y, z, side);
+        if (x > 0)        adj[v].push_back(id3(x - 1, y, z, side));
+        if (x + 1 < side) adj[v].push_back(id3(x + 1, y, z, side));
+        if (y > 0)        adj[v].push_back(id3(x, y - 1, z, side));
+        if (y + 1 < side) adj[v].push_back(id3(x, y + 1, z, side));
+        if (z > 0)        adj[v].push_back(id3(x, y, z - 1, side));
+        if (z + 1 < side) adj[v].push_back(id3(x, y, z + 1, side));
+      }
     }
-
-    return dist;
+  }
+  return adj;
 }
 
-// Генерация кубического графа size x size x size
-Graph generate_cubic_graph(int side) {
-    size_t n = side * side * side;
-    Graph G(n);
+static std::vector<int32_t> seq_bfs(const std::vector<std::vector<vertex>>& adj, vertex s) {
+  size_t n = adj.size();
+  std::vector<int32_t> dist(n, -1);
 
-    auto idx = [side](int x, int y, int z) -> Vertex {
-        return Vertex(x * side * side + y * side + z);
-    };
+  std::vector<vertex> q(n);
+  size_t head = 0, tail = 0;
 
-    parlay::parallel_for(0, n, [&](size_t i) {
-        int x = i / (side * side);
-        int y = (i / side) % side;
-        int z = i % side;
+  dist[s] = 0;
+  q[tail++] = s;
 
-        std::vector<Vertex> neighbors;
-        neighbors.reserve(6);
+  while (head < tail) {
+    vertex v = q[head++];
+    int32_t nd = dist[v] + 1;
+    const auto &neighbors = adj[v];
+    for (size_t i = 0; i < neighbors.size(); ++i) {
+      vertex u = neighbors[i];
+      if (dist[u] == -1) {
+        dist[u] = nd;
+        q[tail++] = u;
+      }
+    }
+  }
+  return dist;
+}
 
-        int dx[6] = {1, -1, 0, 0, 0, 0};
-        int dy[6] = {0, 0, 1, -1, 0, 0};
-        int dz[6] = {0, 0, 0, 0, 1, -1};
+static std::vector<int32_t> par_bfs(const std::vector<std::vector<vertex>>& adj, vertex s) {
+  size_t n = adj.size();
 
-        for (int d = 0; d < 6; ++d) {
-            int nx = x + dx[d], ny = y + dy[d], nz = z + dz[d];
-            if (nx >= 0 && nx < side && ny >= 0 && ny < side && nz >= 0 && nz < side) {
-                neighbors.push_back(idx(nx, ny, nz));
-            }
-        }
-        G[i] = parlay::to_sequence(neighbors);
+  std::vector<std::atomic<uint8_t>> visited(n);
+  parlay::parallel_for(0, n, [&](size_t i) {
+    visited[i].store(0, std::memory_order_relaxed);
+  });
+
+  std::vector<int32_t> dist(n);
+  parlay::parallel_for(0, n, [&](size_t i) { dist[i] = -1; });
+
+  visited[s].store(1, std::memory_order_relaxed);
+  dist[s] = 0;
+
+  parlay::sequence<vertex> frontier(1);
+  frontier[0] = s;
+
+  int32_t level = 0;
+
+  while (frontier.size() != 0) {
+    size_t m = frontier.size();
+
+    parlay::sequence<size_t> deg(m);
+    parlay::parallel_for(0, m, [&](size_t i) {
+      deg[i] = adj[frontier[i]].size();
     });
 
-    return G;
-}
+    auto scanned = parlay::scan(deg);
+    parlay::sequence<size_t> offset = std::move(scanned.first);
+    size_t next_frontier_size = scanned.second;
 
-// Проверка корректности: сравнение результатов seq и par
-bool validate(const parlay::sequence<Vertex>& d1, const parlay::sequence<Vertex>& d2) {
-    if (d1.size() != d2.size()) return false;
-    for (size_t i = 0; i < d1.size(); ++i) {
-        if (d1[i] != d2[i]) {
-            std::cout << "Mismatch at vertex " << i << ": seq=" << d1[i] << ", par=" << d2[i] << "\n";
-            return false;
+    parlay::sequence<vertex> next_frontier(next_frontier_size);
+    parlay::parallel_for(0, next_frontier_size, [&](size_t i) {
+      next_frontier[i] = EMPTY;
+    });
+
+    parlay::parallel_for(0, m, [&](size_t idx) {
+      vertex v = frontier[idx];
+      size_t out = offset[idx];
+      const auto &neighbors = adj[v];
+      for (size_t j = 0; j < neighbors.size(); ++j) {
+        vertex u = neighbors[j];
+        uint8_t expected = 0;
+        bool ok = visited[u].compare_exchange_strong(expected, 1, std::memory_order_relaxed);
+        if (ok) {
+          dist[u] = level + 1;
+          next_frontier[out] = u;
+        } else {
+          next_frontier[out] = EMPTY;
         }
-    }
-    return true;
+        out++;
+      }
+    });
+
+    frontier = parlay::filter(next_frontier, [&](vertex x) { return x != EMPTY; });
+    level++;
+  }
+
+  return dist;
 }
 
-// Измерение времени
-double measure_seq(const Graph& G, Vertex src, parlay::sequence<Vertex>& reference) {
-    auto t0 = std::chrono::high_resolution_clock::now();
-    reference = seq_bfs(G, src);
-    auto t1 = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+static bool equal_dist(const std::vector<int32_t>& a, const std::vector<int32_t>& b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); i++) if (a[i] != b[i]) return false;
+  return true;
 }
 
-double measure_par(const Graph& G, Vertex src, const parlay::sequence<Vertex>& reference) {
-    auto t0 = std::chrono::high_resolution_clock::now();
-    auto result = par_bfs(G, src);
-    auto t1 = std::chrono::high_resolution_clock::now();
+static void test_path_graph() {
+  const size_t n = 10000;
+  std::vector<std::vector<vertex>> adj(n);
+  for (size_t i = 0; i + 1 < n; i++) {
+    adj[i].push_back((vertex)(i + 1));
+    adj[i + 1].push_back((vertex)i);
+  }
 
-    if (!validate(reference, result)) {
-        std::cout << "PAR VALIDATION FAILED!\n";
+  auto d1 = seq_bfs(adj, 0);
+  auto d2 = par_bfs(adj, 0);
+
+  if (!equal_dist(d1, d2)) {
+    std::cout << "TEST PATH: ERROR\n";
+    std::exit(1);
+  }
+}
+
+static void test_random_graph() {
+  const size_t n = 5000;
+  const size_t m = 20000;
+  std::mt19937 rng(12345);
+  std::uniform_int_distribution<uint32_t> uid(0, (uint32_t)n - 1);
+
+  std::vector<std::vector<vertex>> adj(n);
+  for (size_t i = 0; i < m; i++) {
+    vertex u = uid(rng);
+    vertex v = uid(rng);
+    if (u == v) continue;
+    adj[u].push_back(v);
+    adj[v].push_back(u);
+  }
+
+  vertex s = uid(rng);
+  auto d1 = seq_bfs(adj, s);
+  auto d2 = par_bfs(adj, s);
+
+  if (!equal_dist(d1, d2)) {
+    std::cout << "TEST RANDOM: ERROR\n";
+    std::exit(1);
+  }
+}
+
+static void test_small_cube() {
+  const size_t s = 30;
+  auto adj = make_cube_adj(s);
+
+  auto d1 = seq_bfs(adj, 0);
+  auto d2 = par_bfs(adj, 0);
+
+  if (!equal_dist(d1, d2)) {
+    std::cout << "TEST CUBE: ERROR\n";
+    std::exit(1);
+  }
+
+  for (size_t x = 0; x < s; x += 7) {
+    for (size_t y = 0; y < s; y += 7) {
+      for (size_t z = 0; z < s; z += 7) {
+        vertex v = id3(x, y, z, s);
+        int32_t want = static_cast<int32_t>(x + y + z);
+        if (d1[v] != want) {
+          std::cout << "TEST CUBE FORMULA: ERROR\n";
+          std::exit(1);
+        }
+      }
     }
+  }
+}
 
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+static void run_tests() {
+  test_path_graph();
+  test_random_graph();
+  test_small_cube();
+  std::cout << "ALL TESTS PASSED\n";
+}
+
+
+static uint64_t checksum_sample(size_t side, const std::vector<int32_t>& dist) {
+  uint64_t cs = 0;
+  cs += static_cast<uint64_t>(dist[0]);
+  cs += static_cast<uint64_t>(dist[id3(side - 1, 0, 0, side)]);
+  cs += static_cast<uint64_t>(dist[id3(0, side - 1, 0, side)]);
+  cs += static_cast<uint64_t>(dist[id3(0, 0, side - 1, side)]);
+  cs += static_cast<uint64_t>(dist[id3(side - 1, side - 1, side - 1, side)]);
+  return cs;
+}
+
+double measure_seq_cube(const std::vector<std::vector<vertex>>& adj, size_t side) {
+  auto t0 = std::chrono::high_resolution_clock::now();
+  auto dist = seq_bfs(adj, 0);
+  auto t1 = std::chrono::high_resolution_clock::now();
+
+  if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int32_t>(3 * (side - 1))) {
+    std::cout << "SEQ VALIDATION ERROR\n";
+  }
+
+  return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+double measure_par_cube(const std::vector<std::vector<vertex>>& adj, size_t side) {
+  auto t0 = std::chrono::high_resolution_clock::now();
+  auto dist = par_bfs(adj, 0);
+  auto t1 = std::chrono::high_resolution_clock::now();
+
+  if (dist[id3(side - 1, side - 1, side - 1, side)] != static_cast<int32_t>(3 * (side - 1))) {
+    std::cout << "PAR VALIDATION ERROR\n";
+  }
+
+  volatile uint64_t cs = checksum_sample(side, dist);
+  (void)cs;
+
+  return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
 int main() {
-    const int SIDE = 100;
-    const Vertex SRC = 0;
-    const int TESTS = 5;
+  run_tests();
 
-    Graph G = generate_cubic_graph(SIDE);
+  auto adj = make_cube_adj(SIDE);
+  size_t n = adj.size();
 
-    double sum_seq = 0, sum_par = 0;
+  double sum_seq = 0;
+  double sum_par = 0;
 
-    parlay::sequence<Vertex> reference;
+  for (size_t test = 1; test <= TESTS; test++) {
+    std::cout << "\n--- TEST " << test << " ---\n";
 
-    for (int test = 1; test <= TESTS; ++test) {
-        std::cout << "\n--- TEST " << test << " ---\n";
+    double t_seq = measure_seq_cube(adj, SIDE);
+    double t_par = measure_par_cube(adj, SIDE);
 
-        double t_seq = measure_seq(G, SRC, reference);
-        double t_par = measure_par(G, SRC, reference);
+    sum_seq += t_seq;
+    sum_par += t_par;
 
-        sum_seq += t_seq;
-        sum_par += t_par;
+    std::cout << "SEQ: " << t_seq << " ms\n";
+    std::cout << "PAR: " << t_par << " ms\n";
+    std::cout << "Speedup: " << (t_seq / t_par) << "\n";
+  }
 
-        std::cout << "SEQ time: " << t_seq << " ms\n";
-        std::cout << "PAR time: " << t_par << " ms\n";
-        std::cout << "Speedup:  " << (t_seq / t_par) << "x\n";
-    }
+  double average_seq = sum_seq / TESTS;
+  double average_par = sum_par / TESTS;
 
-    double avg_seq = sum_seq / TESTS;
-    double avg_par = sum_par / TESTS;
+  std::cout << "\n--------------------------\n";
+  std::cout << "AVERAGE SEQ: " << average_seq << " ms\n";
+  std::cout << "AVERAGE PAR: " << average_par << " ms\n";
+  std::cout << "AVERAGE SPEEDUP: " << (average_seq / average_par) << "\n";
+  std::cout << "--------------------------\n";
 
-    std::cout << "\n--------------------------\n";
-    std::cout << "AVERAGE SEQ: " << avg_seq << " ms\n";
-    std::cout << "AVERAGE PAR: " << avg_par << " ms\n";
-    std::cout << "AVERAGE SPEEDUP: " << (avg_seq / avg_par) << "x\n";
-    std::cout << "--------------------------\n";
-
-    return 0;
+  return 0;
 }
