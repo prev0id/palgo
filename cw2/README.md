@@ -14,37 +14,34 @@ make run
 ## Результат
 
 ```
-PARLAY_NUM_THREADS=4 ./build/main
-ALL TESTS PASSED
-
 --- TEST 1 ---
-SEQ: 8201.09 ms
-PAR: 2789.55 ms
-Speedup: 2.93993
+SEQ: 10045.8 ms
+PAR: 2877.74 ms
+SPEEDUP: 3.49085
 
 --- TEST 2 ---
-SEQ: 8680.25 ms
-PAR: 2808.42 ms
-Speedup: 3.0908
+SEQ: 9682.42 ms
+PAR: 2838.74 ms
+SPEEDUP: 3.41081
 
 --- TEST 3 ---
-SEQ: 8192.84 ms
-PAR: 2818.42 ms
-Speedup: 2.90689
+SEQ: 8983.5 ms
+PAR: 2831.04 ms
+SPEEDUP: 3.17322
 
 --- TEST 4 ---
-SEQ: 9203.95 ms
-PAR: 2812.3 ms
-Speedup: 3.27275
+SEQ: 8726.68 ms
+PAR: 2840.29 ms
+SPEEDUP: 3.07246
 
 --- TEST 5 ---
-SEQ: 8439.46 ms
-PAR: 2800.38 ms
-Speedup: 3.01368
+SEQ: 8764.09 ms
+PAR: 2876.69 ms
+SPEEDUP: 3.04658
 
 --------------------------
-AVERAGE SEQ: 8543.52 ms
-AVERAGE PAR: 2805.82 ms
-AVERAGE SPEEDUP: 3.04493
+AVERAGE SEQ: 9240.49 ms
+AVERAGE PAR: 2852.9 ms
+AVERAGE SPEEDUP: 3.23898
 --------------------------
 ```
