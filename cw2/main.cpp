@@ -73,9 +73,9 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
     size_t n = graph.size();
 
     std::vector<std::atomic<bool>> visited(n);
-    visited[s].store(1, std::memory_order_relaxed);
+    visited[s].store(true);
 
-    parlay::sequence dist(n, -1);
+    parlay::sequence<int> dist(n, -1);
     dist[s] = 0;
 
     parlay::sequence<Vertex> frontier(1);
@@ -83,44 +83,19 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
 
     int level = 1;
 
-    double deg_total = 0;
-    double scan_total = 0;
-    double move_total = 0;
-    double frontier_total = 0;
-    double pfor_total = 0;
-    double filter_total = 0;
-
     while (frontier.size() != 0) {
         size_t frontier_size = frontier.size();
 
-        auto t0 = clk::now();
         parlay::sequence<size_t> deg = parlay::tabulate(frontier_size, [&](size_t idx)-> size_t {
            return  graph[frontier[idx]].size();
         });
-        // parlay::sequence<size_t> deg(frontier_size);
-        // parlay::parallel_for(0, frontier_size, [&](size_t i) {
-        //     deg[i] = graph[frontier[i]].size();
-        // });
-        auto t1 = clk::now();
-        deg_total += ms(t1 - t0).count();
 
-        t0 = clk::now();
         auto scanned = parlay::scan(deg);
-        t1 = clk::now();
-        scan_total += ms(t1 - t0).count();
-
-        t0 = clk::now();
         parlay::sequence<size_t> offsets = std::move(scanned.first);
         size_t next_frontier_size = scanned.second;
-        t1 = clk::now();
-        move_total += ms(t1 - t0).count();
 
-        t0 = clk::now();
         parlay::sequence<Vertex> next_frontier(next_frontier_size, EMPTY);
-        t1 = clk::now();
-        frontier_total += ms(t1 - t0).count();
 
-        t0 = clk::now();
         parlay::parallel_for(0, frontier_size, [&](size_t idx) {
             Vertex v = frontier[idx];
             size_t offset = offsets[idx];
@@ -129,8 +104,8 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
                 Vertex neighbor = neighbors[neighbor_idx];
                 bool expected = false;
 
-                bool ok = visited[neighbor].compare_exchange_strong(expected, true, std::memory_order_relaxed);
-                if (ok) {
+                bool was_set = visited[neighbor].compare_exchange_strong(expected, true, std::memory_order_relaxed);
+                if (was_set) {
                     dist[neighbor] = level;
                     next_frontier[offset + neighbor_idx] = neighbor;
                 } else {
@@ -138,22 +113,10 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
                 }
             }
         });
-        t1 = clk::now();
-        pfor_total += ms(t1 - t0).count();
 
-        t0 = clk::now();
         frontier = parlay::filter(next_frontier, [&](Vertex x) { return x != EMPTY; });
-        t1 = clk::now();
-        filter_total += ms(t1 - t0).count();
         level++;
     }
-
-    std::cout << "Deg: " << deg_total << "ms\n";
-    std::cout << "Scan: " << scan_total << "ms\n";
-    std::cout << "Move: " << move_total << "ms\n";
-    std::cout << "Frontier: " << frontier_total << "ms\n";
-    std::cout << "Pfor " << pfor_total << "ms\n";
-    std::cout << "Filter " << filter_total << "ms\n\n";
 
     return dist.to_vector();
 }
