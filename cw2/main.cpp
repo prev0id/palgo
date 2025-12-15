@@ -108,8 +108,6 @@ std::vector<int> par_bfs(const Graph& graph, Vertex s) {
                 if (was_set) {
                     dist[neighbor] = level;
                     next_frontier[offset + neighbor_idx] = neighbor;
-                } else {
-                    next_frontier[offset + neighbor_idx] = EMPTY;
                 }
             }
         });
