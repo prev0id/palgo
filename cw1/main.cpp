@@ -13,28 +13,27 @@
 #include <parlay/slice.h>
 
 const size_t N = 100'000'000;
-const size_t BLOCK = 10'000;
+const size_t BLOCK = 1'000;
 const size_t TESTS = 5;
 
-
 template<typename It>
-It partition(It left, It right) {
-    int pivot = *(left + (right - left)/2);
-    It middle = std::partition(left, right,
-        [&](const auto& x) { return x < pivot; });
-    std::partition(middle, right,
-        [&](const auto& x) { return x <= pivot; });
-    return middle;
+std::pair<It, It> partition(It left, It right) {
+  int pivot = *(left + (right - left) / 2);
+
+  It m1 = std::partition(left, right, [&](const auto& x) { return x < pivot; });
+  It m2 = std::partition(m1, right, [&](const auto& x) { return x <= pivot; });
+
+  return {m1, m2};
 }
 
 template<typename It>
 void seq_quicksort(It left, It right) {
     if ((right - left) <= 1) return;
 
-    It middle = partition(left, right);
+    auto [m1, m2] = partition(left, right);
 
-    seq_quicksort(left, middle);
-    seq_quicksort(middle+1, right);
+    seq_quicksort(left, m1);
+    seq_quicksort(m2, right);
 }
 
 double measure_seq(const std::vector<int>& data, const std::vector<int>& target) {
@@ -50,20 +49,21 @@ double measure_seq(const std::vector<int>& data, const std::vector<int>& target)
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
-
 template<typename It>
 void par_quicksort(It left, It right) {
-    long n = right - left;
-    if (n < BLOCK) {
+    if ((right - left) < BLOCK) {
         seq_quicksort(left, right);
         return;
     }
 
-    It middle = partition(left, right);
+    auto pivots = partition(left, right);
+    It m1 = pivots.first;
+    It m2 = pivots.second;
 
     parlay::par_do(
-        [&] { par_quicksort(left, middle); },
-        [&] { par_quicksort(middle, right); });
+        [&] { par_quicksort(left, m1); },
+        [&] { par_quicksort(m2, right); }
+    );
 }
 
 double measure_par(const std::vector<int>& data, const std::vector<int>& target) {
@@ -74,22 +74,96 @@ double measure_par(const std::vector<int>& data, const std::vector<int>& target)
     auto t1 = std::chrono::high_resolution_clock::now();
 
     bool ok = true;
-    for (size_t i = 0; i < data.size(); i++)
+    for (size_t i = 0; i < data.size(); i++) {
         if (data_copy[i] != target[i]) { ok = false; break; }
-
+    }
     if (!ok) std::cout << "PAR VALIDATION ERROR\n";
 
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
+struct TestCase {
+    std::string name;
+    std::vector<int> input;
+    std::vector<int> expected;
+};
+
+static std::vector<TestCase> testCases = {
+    {
+        "empty",
+        {},
+        {}
+    },
+    {
+        "single_element",
+        {42},
+        {42}
+    },
+    {
+        "already_sorted",
+        {1, 2, 3, 4, 5},
+        {1, 2, 3, 4, 5}
+    },
+    {
+        "reverse_sorted",
+        {9, 7, 5, 3, 1},
+        {1, 3, 5, 7, 9}
+    },
+    {
+        "with_duplicates",
+        {5, 3, 7, 3, 9, 5, 1},
+        {1, 3, 3, 5, 5, 7, 9}
+    },
+};
+
+std::string vec2str(const std::vector<int>& v) {
+    std::string s = "[";
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i) s += ", ";
+        s += std::to_string(v[i]);
+    }
+    s += "]";
+    return s;
+}
+
+bool run_test(const TestCase& tc) {
+    std::vector<int> seq = tc.input;
+    seq_quicksort(seq.begin(), seq.end());
+    if (seq != tc.expected) {
+        std::cout << "[FAIL][SEQ] " << tc.name
+            << "  actual: " << vec2str(seq)
+            << "  expected: " << vec2str(tc.expected) << "\n";
+        return false;
+    }
+
+    auto par_seq = parlay::to_sequence(tc.input);
+    par_quicksort(par_seq.begin(), par_seq.end());
+
+    std::vector<int> par_vec(par_seq.begin(), par_seq.end());
+    if (par_vec != tc.expected) {
+        std::cout << "[FAIL][PAR] " << tc.name
+            << "  actual: " << vec2str(par_vec)
+            << "  expected: " << vec2str(tc.expected) << "\n";
+        return false;
+    }
+
+    std::cout << "[PASS] " << tc.name << "\n";
+    return true;
+}
+
+
 int main() {
     std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(INT32_MIN, INT32_MAX);
 
+    for (const auto& tc : testCases) {
+        if (!run_test(tc))  return 1;
+    }
+
     double sum_seq = 0;
     double sum_par = 0;
 
-    for (int test = 1; test <= TESTS; test++) {
+    for (size_t test = 1; test <= TESTS; test++) {
         std::cout << "\n--- TEST " << test << " ---\n";
 
         std::vector<int> data(N);
@@ -106,7 +180,7 @@ int main() {
 
         std::cout << "SEQ: " << t_seq << " ms\n";
         std::cout << "PAR: " << t_par << " ms\n";
-        std::cout << "Speedup: " << (t_seq / t_par) << std::endl;
+        std::cout << "SPEEDUP: " << (t_seq / t_par) << "\n";
     }
 
     double average_seq = sum_seq / TESTS;
