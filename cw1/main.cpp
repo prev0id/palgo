@@ -88,7 +88,7 @@ struct TestCase {
     std::vector<int> expected;
 };
 
-static std::vector<TestCase> testCases = {
+std::vector<TestCase> testCases = {
     {
         "empty",
         {},

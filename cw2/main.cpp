@@ -13,15 +13,15 @@
 
 using Vertex = int;
 using Graph = std::vector<std::vector<Vertex>>;
-static constexpr Vertex EMPTY = -1;
+Vertex EMPTY = -1;
 using clk = std::chrono::high_resolution_clock;
 using ms = std::chrono::duration<double, std::milli>;
 
 const size_t SIDE  = 300;
 const size_t TESTS = 5;
 
-inline Vertex make_vertex_id(size_t x, size_t y, size_t z, size_t side) {
-  return static_cast<Vertex>((x * side + y) * side + z);
+Vertex make_vertex_id(size_t x, size_t y, size_t z, size_t side) {
+  return (x * side + y) * side + z;
 }
 
 Graph make_cube_graph(size_t side) {
@@ -105,7 +105,7 @@ std::vector<int> par_bfs(const Graph& graph, Vertex source) {
         });
 
         auto scanned = parlay::scan(deg);
-        parlay::sequence<size_t> offsets = std::move(scanned.first);
+        parlay::sequence<size_t> offsets = scanned.first;
         size_t next_frontier_size = scanned.second;
 
         parlay::sequence<Vertex> next_frontier(next_frontier_size, EMPTY);
@@ -194,7 +194,7 @@ const std::vector<TestCase> testCases = {
     },
 };
 
-static std::string vec2str(const std::vector<int>& v) {
+std::string vec2str(const std::vector<int>& v) {
     std::string s = "[";
     for (size_t i = 0; i < v.size(); ++i) {
         if (i) s += ", ";
@@ -230,7 +230,7 @@ double measure_seq_cube(const Graph& graph, size_t side) {
     auto dist = seq_bfs(graph, 0);
     auto t1 = clk::now();
 
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return ms(t1 - t0).count();
 }
 
 double measure_par_cube(const Graph& graph, size_t side) {
@@ -238,7 +238,7 @@ double measure_par_cube(const Graph& graph, size_t side) {
     auto dist = par_bfs(graph, 0);
     auto t1 = clk::now();
 
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    return ms(t1 - t0).count();
 }
 
 int main() {
