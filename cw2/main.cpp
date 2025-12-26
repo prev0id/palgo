@@ -133,9 +133,6 @@ std::vector<int> par_bfs(const Graph& graph, Vertex source) {
     return dist.to_vector();
 }
 
-
-
-
 struct TestCase {
     std::string name;
     Graph graph;
@@ -224,6 +221,116 @@ bool run_test(const TestCase& tc) {
     return true;
 }
 
+bool test_cube() {
+    Graph graph = make_cube_graph(SIDE);
+    Vertex src = make_vertex_id(0,0,0,SIDE);
+
+    std::vector<int> seq = seq_bfs(graph, src);
+    std::vector<int> par = par_bfs(graph, src);
+
+    for (size_t id = 0; id < graph.size(); ++id) {
+        size_t x = id / (SIDE*SIDE);
+        size_t y = (id % (SIDE*SIDE)) / SIDE;
+        size_t z = id % SIDE;
+        int expected = x + y + z;
+        if (seq[id] != expected) {
+            std::cout << "[FAIL][SEQ][CUBE] id=" << id << " got=" << seq[id] << " exp=" << expected << "\n";
+            return false;
+        }
+        if (par[id] != expected) {
+            std::cout << "[FAIL][PAR][CUBE] id=" << id << " got=" << par[id] << " exp=" << expected << "\n";
+            return false;
+        }
+    }
+    std::cout << "[PASS] small_cube (150^3)\n";
+    return true;
+}
+
+bool test_long_path() {
+    size_t n = 1'000'000;
+    Graph g(n);
+    for (size_t i = 0; i + 1 < n; ++i) {
+        g[i].push_back(i+1);
+        g[i+1].push_back(i);
+    }
+    const Vertex src = 0;
+
+    std::vector<int> seq = seq_bfs(g, src);
+    std::vector<int> par = par_bfs(g, src);
+
+    for (size_t i = 0; i < n; ++i) {
+        int expected = static_cast<int>(i);
+        if (seq[i] != expected) {
+            std::cout << "[FAIL][SEQ][PATH] i=" << i << " got=" << seq[i] << " exp=" << expected << "\n";
+            return false;
+        }
+        if (par[i] != expected) {
+            std::cout << "[FAIL][PAR][PATH] i=" << i << " got=" << par[i] << " exp=" << expected << "\n";
+            return false;
+        }
+    }
+    std::cout << "[PASS] long_path (1 000 000 vertices)\n";
+    return true;
+}
+
+bool test_random_big() {
+    const size_t n = 1'000'000;
+    const size_t m = 4'000'000;
+
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<size_t> dist(0, n-1);
+
+    Graph graph(n);
+    for (size_t i = 0; i < m; ++i) {
+        size_t u = dist(rng);
+        size_t v = dist(rng);
+        graph[u].push_back(v);
+        graph[v].push_back(u);
+    }
+
+    const Vertex src = 0;
+    std::vector<int> seq = seq_bfs(graph, src);
+    std::vector<int> par = par_bfs(graph, src);
+
+    if (seq != par) {
+        std::cout << "[FAIL][COMPARE][RANDOM] seq and par differ\n";
+        return false;
+    }
+    std::cout << "[PASS] random_big (1 000 000 vertices, 2_000_000 edges)\n";
+    return true;
+}
+
+bool test_big_star() {
+    const size_t leaves = 2'000'000;
+    const size_t n = leaves + 1;
+    Graph graph(n);
+    for (size_t i = 1; i < n; ++i) {
+        graph[0].push_back(i);
+        graph[i].push_back(0);
+    }
+
+    const Vertex src = 0;
+    std::vector<int> seq = seq_bfs(graph, src);
+    std::vector<int> par = par_bfs(graph, src);
+
+    if (seq[0] != 0 || par[0] != 0) {
+        std::cout << "[FAIL][STAR] center distance not zero\n";
+        return false;
+    }
+    for (size_t i = 1; i < n; ++i) {
+        if (seq[i] != 1) {
+            std::cout << "[FAIL][SEQ][STAR] leaf " << i << " dist=" << seq[i] << "\n";
+            return false;
+        }
+        if (par[i] != 1) {
+            std::cout << "[FAIL][PAR][STAR] leaf " << i << " dist=" << par[i] << "\n";
+            return false;
+        }
+    }
+    std::cout << "[PASS] big_star (" << n << " vertices)\n";
+    return true;
+}
+
 
 double measure_seq_cube(const Graph& graph, size_t side) {
     auto t0 = clk::now();
@@ -245,6 +352,11 @@ int main() {
     for (const auto& tc : testCases) {
         if (!run_test(tc)) return 1;
     }
+
+    if (!test_cube()) return 1;
+    if (!test_long_path()) return 1;
+    if (!test_random_big()) return 1;
+    if (!test_big_star()) return 1;
 
     auto graph = make_cube_graph(SIDE);
     size_t n = graph.size();

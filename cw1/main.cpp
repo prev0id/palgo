@@ -151,13 +151,48 @@ bool run_test(const TestCase& tc) {
     return true;
 }
 
+TestCase make_test_case(const std::string& name, std::vector<int> data) {
+    std::vector<int> expected = data;
+    std::sort(expected.begin(), expected.end());
+    return {name, data, expected};
+}
+
+std::vector<TestCase> generate_big_tests() {
+    constexpr size_t BIG_N = 50'000'000;
+    std::mt19937 rng(std::random_device{}());
+
+    std::uniform_int_distribution<int> dist_full(INT32_MIN, INT32_MAX);
+    std::vector<int> random_full(BIG_N);
+    for (auto& x : random_full) x = dist_full(rng);
+    TestCase tc1 = make_test_case("big_random_full_range", random_full);
+
+    std::uniform_int_distribution<int> dist_small(0, 9);
+    std::vector<int> random_few(BIG_N);
+    for (auto& x : random_few) x = dist_small(rng);
+    TestCase tc2 = make_test_case("big_random_few_values", random_few);
+
+    std::vector<int> already_sorted(BIG_N);
+    std::iota(already_sorted.begin(), already_sorted.end(), 0);
+    TestCase tc3 = make_test_case("big_already_sorted", already_sorted);
+
+    std::vector<int> reverse_sorted(BIG_N);
+    std::iota(reverse_sorted.begin(), reverse_sorted.end(), 0);
+    std::reverse(reverse_sorted.begin(), reverse_sorted.end());
+    TestCase tc4 = make_test_case("big_reverse_sorted", reverse_sorted);
+
+    return { tc1, tc2, tc3, tc4 };
+}
 
 int main() {
     std::mt19937 rng(std::random_device{}());
     std::uniform_int_distribution<int> dist(INT32_MIN, INT32_MAX);
 
     for (const auto& tc : testCases) {
-        if (!run_test(tc))  return 1;
+        if (!run_test(tc)) return 1;
+    }
+
+    for (const auto& tc : generate_big_tests()) {
+        if (!run_test(tc)) return 1;
     }
 
     double sum_seq = 0;
